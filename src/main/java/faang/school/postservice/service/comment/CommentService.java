@@ -3,25 +3,24 @@ package faang.school.postservice.service.comment;
 import faang.school.postservice.client.UserServiceClient;
 import faang.school.postservice.dto.comment.CommentDto;
 import faang.school.postservice.dto.user.UserDto;
-import faang.school.postservice.event.kafka.CommentKafkaEvent;
 import faang.school.postservice.exception.ExceptionMessages;
 import faang.school.postservice.mapper.comment.CommentMapper;
 import faang.school.postservice.mapper.post.PostMapper;
-import faang.school.postservice.messaging.publisher.kafka.comment.KafkaCommentPublisher;
-import faang.school.postservice.messaging.publisher.redis.comment.CommentEventPublisher;
 import faang.school.postservice.model.Comment;
 import faang.school.postservice.model.redis.UserRedis;
 import faang.school.postservice.repository.CommentRepository;
 import faang.school.postservice.repository.redis.RedisUserRepository;
 import faang.school.postservice.service.post.PostService;
+import faang.school.postservice.service.publisher.EventPublisherService;
 import faang.school.postservice.validator.comment.UserClientValidation;
 import jakarta.persistence.PersistenceException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.NoSuchElementException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.NoSuchElementException;
 
 @Service
 @Slf4j
@@ -33,9 +32,8 @@ public class CommentService {
     private final PostService postService;
     private final CommentMapper commentMapper;
     private final PostMapper postMapper;
-    private final CommentEventPublisher commentEventPublisher;
     private final UserServiceClient userServiceClient;
-    private final KafkaCommentPublisher kafkaCommentPublisher;
+    private final EventPublisherService eventPublisherService;
 
     public CommentDto addNewCommentInPost(CommentDto commentDto) {
         userClientValidation.checkUser(commentDto.getAuthorId());
@@ -49,7 +47,7 @@ public class CommentService {
             throw new PersistenceException(ExceptionMessages.FAILED_PERSISTENCE, e);
         }
 
-        commentEventPublisher.publish(commentMapper.toEvent(comment));
+        eventPublisherService.submitCommentEventToRedis(comment);
         CommentDto returnCommentDto = commentMapper.toDto(comment);
 
         // отправка пользователя в редис
@@ -59,8 +57,7 @@ public class CommentService {
                 .username(userDto.getUsername())
                 .build());
         log.info("Save user with ID: {} to Redis", userDto.getId());
-        // отправка коммента в кафку
-        kafkaCommentPublisher.publish(commentMapper.toCommentKafkaEvent(returnCommentDto));
+        eventPublisherService.submitCommentEventToKafka(returnCommentDto);
         log.info("Send event with Comment ID: {} to Kafka", returnCommentDto.getPostId());
 
         return returnCommentDto;

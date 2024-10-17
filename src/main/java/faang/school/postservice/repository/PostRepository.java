@@ -5,8 +5,10 @@ import faang.school.postservice.model.Post;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Repository
@@ -35,4 +37,19 @@ public interface PostRepository extends CrudRepository<Post, Long> {
             AND p.deleted = false
             """)
     List<PostForFeedHeater> findAllPublishedPostsForFeedHeater();
+
+    @Query(value = """
+            SELECT * FROM post p
+            WHERE p.author_id IN (
+                SELECT s.followee_id FROM subscription s
+                WHERE s.follower_id = :followerId)
+            AND p.published IS TRUE
+            AND p.deleted IS FALSE
+            AND p.updated_at >= :start
+            ORDER BY p.updated_at DESC
+            LIMIT :limit
+            """, nativeQuery = true)
+    List<Post> getPostsByFollowerIdAndTime(@Param("followerId") long followerId,
+                                           @Param("limit") int limit,
+                                           @Param("start") LocalDateTime start);
 }
